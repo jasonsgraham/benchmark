@@ -4,6 +4,7 @@ use benchmark::cli::Commands::GenerateAutoComplete;
 use benchmark::error::BenchmarkError::OtherError;
 use benchmark::error::BenchmarkResult;
 use benchmark::falkor::{Falkor, Started, Stopped};
+use benchmark::ibex::{Ibex, Started as IbexStarted, Stopped as IbexStopped};
 use benchmark::neo4j_client::Neo4jClient;
 use benchmark::queries_repository::PreparedQuery;
 use benchmark::scenario::Name::Users;
@@ -12,7 +13,8 @@ use benchmark::scheduler::Msg;
 use benchmark::utils::{delete_file, file_exists, format_number};
 use benchmark::{
     scheduler, FALKOR_ERROR_REQUESTS_DURATION_HISTOGRAM,
-    FALKOR_SUCCESS_REQUESTS_DURATION_HISTOGRAM, NEO4J_ERROR_REQUESTS_DURATION_HISTOGRAM,
+    FALKOR_SUCCESS_REQUESTS_DURATION_HISTOGRAM, IBEX_ERROR_REQUESTS_DURATION_HISTOGRAM,
+    IBEX_SUCCESS_REQUESTS_DURATION_HISTOGRAM, NEO4J_ERROR_REQUESTS_DURATION_HISTOGRAM,
     NEO4J_SUCCESS_REQUESTS_DURATION_HISTOGRAM,
 };
 use clap::{Command, CommandFactory, Parser};
@@ -78,6 +80,14 @@ async fn main() -> BenchmarkResult<()> {
                         init_falkor(size, force).await?;
                     }
                 }
+                Vendor::Ibex => {
+                    if dry_run {
+                        info!("Dry run");
+                        todo!()
+                    } else {
+                        init_ibex(size, force).await?;
+                    }
+                }
             }
         }
         Commands::Run {
@@ -92,6 +102,9 @@ async fn main() -> BenchmarkResult<()> {
             }
             Vendor::Falkor => {
                 run_falkor(parallel, name, mps, simulate).await?;
+            }
+            Vendor::Ibex => {
+                run_ibex(parallel, name, mps, simulate).await?;
             }
         },
 
@@ -400,6 +413,179 @@ async fn init_falkor(
     info!("writing done, took: {:?}", start.elapsed());
     let falkor = falkor.stop().await?;
     falkor.save_db(size).await?;
+
+    Ok(())
+}
+
+async fn run_ibex(
+    parallel: usize,
+    file_name: String,
+    mps: usize,
+    simulate: Option<usize>,
+) -> BenchmarkResult<()> {
+    if parallel == 0 {
+        return Err(OtherError(
+            "Parallelism level must be greater than zero.".to_string(),
+        ));
+    }
+    let ibex: Ibex<IbexStopped> = benchmark::ibex::Ibex::default();
+
+    let (queries_metadata, queries) = read_queries(file_name).await?;
+
+    // if dump not present return error
+    ibex.dump_exists_or_error(queries_metadata.dataset).await?;
+    // restore the dump
+    ibex.restore_db(queries_metadata.dataset).await?;
+    // start ibex
+    let ibex = ibex.start().await?;
+
+    // get the graph size
+    let (node_count, relation_count) = ibex.graph_size().await?;
+
+    info!(
+        "graph has {} nodes and {} relations",
+        format_number(node_count),
+        format_number(relation_count)
+    );
+
+    // prepare the mpsc channel
+    let (tx, rx) = tokio::sync::mpsc::channel::<Msg<PreparedQuery>>(20 * parallel);
+    let rx: Arc<Mutex<Receiver<Msg<PreparedQuery>>>> = Arc::new(Mutex::new(rx));
+
+    // iterate over queries and send them to the workers
+
+    let number_of_queries = queries_metadata.size;
+    info!(
+        "running {} queries",
+        format_number(number_of_queries as u64)
+    );
+
+    let scheduler_handle = scheduler::spawn_scheduler::<PreparedQuery>(mps, tx.clone(), queries);
+    let mut workers_handles = Vec::with_capacity(parallel);
+    // start workers
+    let start = Instant::now();
+    for spawn_id in 0..parallel {
+        let handle = spawn_ibex_worker(&ibex, spawn_id, &rx, simulate).await?;
+        workers_handles.push(handle);
+    }
+
+    let _ = scheduler_handle.await;
+    drop(tx);
+
+    for handle in workers_handles {
+        let _ = handle.await;
+    }
+
+    let elapsed = start.elapsed();
+    info!(
+        "running {} queries took {:?}",
+        format_number(number_of_queries as u64),
+        elapsed
+    );
+
+    // stop ibex
+    let _stopped = ibex.stop().await?;
+    Ok(())
+}
+
+async fn spawn_ibex_worker(
+    ibex: &Ibex<IbexStarted>,
+    worker_id: usize,
+    receiver: &Arc<Mutex<Receiver<Msg<PreparedQuery>>>>,
+    simulate: Option<usize>,
+) -> BenchmarkResult<JoinHandle<()>> {
+    info!("spawning worker");
+    let mut client = ibex.client().await?;
+    let receiver = Arc::clone(receiver);
+    let handle = tokio::spawn(async move {
+        let worker_id = worker_id.to_string();
+        let worker_id_str = worker_id.as_str();
+        let mut counter = 0u32;
+        loop {
+            // get the next value and release the mutex
+            let received = receiver.lock().await.recv().await;
+
+            match received {
+                Some(prepared_query) => {
+                    let start_time = Instant::now();
+
+                    let r = client
+                        .execute_prepared_query(worker_id_str, &prepared_query, &simulate)
+                        .await;
+                    let duration = start_time.elapsed();
+                    match r {
+                        Ok(_) => {
+                            IBEX_SUCCESS_REQUESTS_DURATION_HISTOGRAM
+                                .observe(duration.as_secs_f64());
+                            counter += 1;
+                            if counter.is_multiple_of(1000) {
+                                info!("worker {} processed {} queries", worker_id, counter);
+                            }
+                        }
+                        Err(e) => {
+                            IBEX_ERROR_REQUESTS_DURATION_HISTOGRAM
+                                .observe(duration.as_secs_f64());
+                            let seconds_wait = 3u64;
+                            info!(
+                                "worker {} failed to process query, not sleeping for {} seconds {:?}",
+                                worker_id, seconds_wait, e
+                            );
+                        }
+                    }
+                }
+                None => {
+                    info!("worker {} received None, exiting", worker_id);
+                    break;
+                }
+            }
+        }
+        info!("worker {} finished", worker_id);
+    });
+
+    Ok(handle)
+}
+
+async fn init_ibex(
+    size: Size,
+    _force: bool,
+) -> BenchmarkResult<()> {
+    let spec = Spec::new(benchmark::scenario::Name::Users, size, Vendor::Ibex);
+    let ibex = benchmark::ibex::Ibex::default();
+    ibex.clean_db().await?;
+
+    let ibex = ibex.start().await?;
+    info!("writing data");
+    // unlike Falkor/Neo4j, ibexdb's Cypher executor doesn't yet support
+    // CREATE INDEX, so there's no index-creation step here
+    let start = Instant::now();
+
+    let mut ibex_client = ibex.client().await?;
+
+    let mut data_iterator = spec.init_data_iterator().await?;
+
+    while let Some(result) = data_iterator.next().await {
+        match result {
+            Ok(query) => {
+                ibex_client
+                    ._execute_query("loader", "", query.as_str())
+                    .await?;
+            }
+            Err(e) => {
+                error!("error {}", e);
+            }
+        }
+    }
+
+    let (node_count, relation_count) = ibex.graph_size().await?;
+    info!(
+        "{} nodes and {} relations were imported at {:?}",
+        format_number(node_count),
+        format_number(relation_count),
+        start.elapsed()
+    );
+    info!("writing done, took: {:?}", start.elapsed());
+    let ibex = ibex.stop().await?;
+    ibex.save_db(size).await?;
 
     Ok(())
 }

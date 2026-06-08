@@ -32,6 +32,26 @@ pub struct FalkorProcess {
 
 impl FalkorProcess {
     pub async fn new() -> BenchmarkResult<Self> {
+        // FALKOR_EXTERNAL: connect to an already-running FalkorDB (e.g. the
+        // dockerized `falkordb/falkordb` container from docker-compose.yml)
+        // instead of spawning and managing a local redis-server. Metrics
+        // reporting and the ping server still run against it on 127.0.0.1:6379.
+        if env::var("FALKOR_EXTERNAL").is_ok() {
+            info!("FALKOR_EXTERNAL set — connecting to externally managed FalkorDB");
+            let (prom_process_handle, prom_shutdown_tx) =
+                prometheus_metrics::run_metrics_reporter(report_metrics);
+            let (ping_server_handle, ping_server_shutdown_tx) = ping_server();
+            return Ok(Self {
+                shutdown_tx: None,
+                process_handle: None,
+                prom_shutdown_tx: Some(prom_shutdown_tx),
+                prom_process_handle: Some(prom_process_handle),
+                ping_server_shutdown_tx: Some(ping_server_shutdown_tx),
+                ping_server_handle: Some(ping_server_handle),
+                dropped: false,
+            });
+        }
+
         redis_shutdown().await?; // if redis run on this machine, use redis-cli to shut it down
 
         create_directory_if_not_exists(REDIS_DATA_DIR).await?;

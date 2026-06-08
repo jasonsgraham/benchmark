@@ -1,0 +1,57 @@
+# Spins up FalkorDB, Neo4j, and ibexdb as containers with comparable resource
+# limits, so head-to-head comparisons (ibexdb-bca) run against uniform,
+# reproducible environments instead of requiring each vendor to be built or
+# installed on the host (see readme.md "System Requirements").
+#
+# Usage:
+#   docker compose -f docker-compose.vendors.yml up -d --build
+#
+# Then point the benchmark at the containers instead of spawning local
+# processes:
+#   FALKOR_EXTERNAL=1 \
+#   IBEX_EXTERNAL=1 IBEX_ENDPOINT=http://127.0.0.1:8088 \
+#   NEO4J_URI=127.0.0.1:7687 NEO4J_PASSWORD=h6u4krd10 \
+#     cargo run --release --bin benchmark -- load --vendor falkor -s small
+#
+# NOTE: the Neo4j driver (src/neo4j.rs) still manages start/stop/restore via
+# the local `neo4j`/`neo4j-admin` binaries — pointing NEO4J_URI at this
+# container only helps the *query* path, not load/init lifecycle management.
+
+x-resources: &vendor-resources
+  deploy:
+    resources:
+      limits:
+        cpus: "4"
+        memory: 8g
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./vendor-data/falkor:/data
+    <<: *vendor-resources
+
+  neo4j:
+    image: neo4j:5.25
+    environment:
+      - NEO4J_AUTH=neo4j/h6u4krd10
+      - NEO4J_dbms_usage__report_enabled=false
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - ./vendor-data/neo4j/data:/data
+      - ./vendor-data/neo4j/logs:/logs
+    <<: *vendor-resources
+
+  ibexdb:
+    build:
+      context: ..
+      dockerfile: Dockerfile.ibexdb
+    ports:
+      - "8088:8080"
+    volumes:
+      - ./vendor-data/ibex:/data
+    <<: *vendor-resources

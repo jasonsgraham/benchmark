@@ -5,6 +5,7 @@
 downloads
 cache
 backups
+vendor-data
 *.so
 redis-data
 redis-server

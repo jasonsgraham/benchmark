@@ -14,11 +14,15 @@ use tokio::task::JoinHandle;
 use tracing::info;
 
 const IBEX_HOST: &str = "127.0.0.1";
-const IBEX_PORT: u16 = 8080;
+// NOTE: deliberately not 8080 — the benchmark's own Prometheus endpoint
+// (see prometheus_endpoint.rs) binds 0.0.0.0:8080, and that would collide
+// with `ibexdb server`'s default port on the same host.
+const IBEX_PORT: u16 = 8088;
 pub(crate) const IBEX_DATA_DIR: &str = "./ibex-data";
 
 pub fn ibex_endpoint() -> String {
-    format!("http://{}:{}", IBEX_HOST, IBEX_PORT)
+    std::env::var("IBEX_ENDPOINT")
+        .unwrap_or_else(|_| format!("http://{}:{}", IBEX_HOST, IBEX_PORT))
 }
 
 /// Mirror of `ibexdb_server::StatsResponse` — that struct is private to the
@@ -48,6 +52,23 @@ pub struct IbexProcess {
 
 impl IbexProcess {
     pub async fn new(database: &str) -> BenchmarkResult<Self> {
+        let (prom_process_handle, prom_shutdown_tx) =
+            prometheus_metrics::run_metrics_reporter(report_metrics);
+
+        // IBEX_EXTERNAL: connect to an already-running `ibexdb server` (e.g. the
+        // dockerized instance from docker-compose.yml) instead of spawning and
+        // managing a local one. Metrics reporting still runs against it.
+        if std::env::var("IBEX_EXTERNAL").is_ok() {
+            info!("IBEX_EXTERNAL set — connecting to externally managed ibexdb server");
+            return Ok(Self {
+                shutdown_tx: None,
+                process_handle: None,
+                prom_shutdown_tx: Some(prom_shutdown_tx),
+                prom_process_handle: Some(prom_process_handle),
+                dropped: false,
+            });
+        }
+
         let command = ibex_binary_path()?;
         let args: Vec<String> = vec![
             "server".to_string(),
@@ -70,9 +91,6 @@ impl IbexProcess {
             let _ = process_monitor.run(counter).await;
         });
         let process_handle = Some(ibex_process_monitor);
-
-        let (prom_process_handle, prom_shutdown_tx) =
-            prometheus_metrics::run_metrics_reporter(report_metrics);
 
         Ok(Self {
             shutdown_tx: Some(shutdown_tx),

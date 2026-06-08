@@ -94,6 +94,40 @@ from `~/`
 docker-compose up
 ```
 
+##### Run the graphdbs in Docker for head-to-head comparisons
+
+Building FalkorDB from source and downloading Neo4j (see "System Requirements"
+above) is heavyweight and host-specific. `docker-compose.vendors.yml` instead
+runs FalkorDB, Neo4j, and ibexdb as containers with comparable resource limits
+(4 CPUs / 8GB each), giving uniform, reproducible environments for head-to-head
+runs without installing anything on the host:
+
+```bash
+docker compose -f docker-compose.vendors.yml up -d --build
+```
+
+This exposes each vendor on its usual port — FalkorDB/Redis on `6379`, Neo4j on
+`7474`/`7687`, ibexdb on `8088` (mapped from the container's `8080`, since the
+benchmark's own Prometheus endpoint already binds host port `8080`). Point the
+benchmark at the containers instead of spawning/managing local processes with
+the `*_EXTERNAL` env vars:
+
+```bash
+FALKOR_EXTERNAL=1 \
+  cargo run --release --bin benchmark -- load --vendor falkor -s small
+
+IBEX_EXTERNAL=1 IBEX_ENDPOINT=http://127.0.0.1:8088 \
+  cargo run --release --bin benchmark -- load --vendor ibex -s small
+
+NEO4J_URI=127.0.0.1:7687 NEO4J_PASSWORD=h6u4krd10 \
+  cargo run --release --bin benchmark -- load --vendor neo4j -s small
+```
+
+Note: the Neo4j driver (`src/neo4j.rs`) still manages start/stop/restore/dump
+through the local `neo4j`/`neo4j-admin` binaries, so `NEO4J_URI` only redirects
+the *query* path to the container — lifecycle commands (`load`'s clean/restore
+steps) still require a local Neo4j install for now.
+
 The benchmark is a cli tool that can be used to run the benchmarks
 
 ```bash

@@ -20,6 +20,8 @@ pub enum BenchmarkError {
     FailedToDownloadFileError(String),
     #[error("FalkorDB error: {0}")]
     FalkorDBError(#[from] FalkorDBError),
+    #[error("IbexDB error: {0}")]
+    IbexDBError(#[from] ibexdb_types::IbexError),
     #[error("Redis error: {0}")]
     RedisError(#[from] redis::RedisError),
     #[error("Serde error: {0}")]

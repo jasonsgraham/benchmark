@@ -22,6 +22,8 @@ result_large_err = "allow"
 
 
 [dependencies]
+ibexdb-client = { path = "../crates/ibexdb-client" }
+ibexdb-types = { path = "../crates/ibexdb-types" }
 neo4rs = "0.8.0"
 thiserror = "2.0.6"
 tokio = { version = "1.42.0", features = ["full", "tracing"] }

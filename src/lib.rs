@@ -11,6 +11,7 @@ use prometheus::IntGauge;
 pub mod cli;
 pub mod error;
 pub mod falkor;
+pub mod ibex;
 pub mod neo4j;
 pub mod neo4j_client;
 pub mod process_monitor;
@@ -132,6 +133,48 @@ lazy_static! {
     pub static ref NEO4J_MEM_USAGE_GAUGE: IntGauge = register_int_gauge!(
         "neo4j_memory_usage",
         "Memory usage in bytes for the neo4j process"
+    )
+    .unwrap();
+    pub static ref IBEX_RESTART_COUNTER: IntCounter = register_int_counter!(
+        "ibexdb_restarts_total",
+        "Total number of restarts for the ibexdb server process",
+    )
+    .unwrap();
+    pub static ref IBEX_NODES_GAUGE: IntGauge = register_int_gauge!(
+        "ibexdb_nodes_total",
+        "Total number of nodes in the ibexdb graph",
+    )
+    .unwrap();
+    pub static ref IBEX_RELATIONSHIPS_GAUGE: IntGauge = register_int_gauge!(
+        "ibexdb_relationships_total",
+        "Total number of relationships in the ibexdb graph",
+    )
+    .unwrap();
+    pub static ref IBEX_SUCCESS_REQUESTS_DURATION_HISTOGRAM: Histogram = register_histogram!(
+        "ibexdb_response_time_success_histogram",
+        "Response time histogram of the successful requests",
+        vec![0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,]
+    )
+    .unwrap();
+    pub static ref IBEX_ERROR_REQUESTS_DURATION_HISTOGRAM: Histogram = register_histogram!(
+        "ibexdb_response_time_error_histogram",
+        "Response time histogram of the error requests",
+        vec![0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,]
+    )
+    .unwrap();
+    pub static ref IBEX_MSG_DEADLINE_OFFSET_GAUGE: IntGauge = register_int_gauge!(
+        "ibexdb_msg_deadline_offset",
+        "offset of the message from the deadline",
+    )
+    .unwrap();
+    pub static ref IBEX_CPU_USAGE_GAUGE: IntGauge = register_int_gauge!(
+        "ibexdb_cpu_usage",
+        "CPU usage percentage for the ibexdb server process"
+    )
+    .unwrap();
+    pub static ref IBEX_MEM_USAGE_GAUGE: IntGauge = register_int_gauge!(
+        "ibexdb_memory_usage",
+        "Memory usage in bytes for the ibexdb server process"
     )
     .unwrap();
 }

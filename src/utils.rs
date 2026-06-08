@@ -51,6 +51,19 @@ pub async fn delete_file(file_path: &str) -> BenchmarkResult<()> {
     Ok(())
 }
 
+/// Path to the `ibexdb` binary, overridable via `IBEX_PATH`. Defaults to the
+/// release build one level up — this benchmark fork lives nested inside the
+/// `ibexdb-rust` workspace (`<repo>/benchmark`), so `../target/release/ibexdb`
+/// is the natural location after `cargo build --release -p ibexdb`.
+pub fn ibex_binary_path() -> BenchmarkResult<String> {
+    if let Ok(path) = env::current_dir() {
+        let default = format!("{}/../target/release/ibexdb", path.display());
+        Ok(env::var("IBEX_PATH").unwrap_or(default))
+    } else {
+        Err(OtherError("Failed to get current directory".to_string()))
+    }
+}
+
 pub fn falkor_shared_lib_path() -> BenchmarkResult<String> {
     if let Ok(path) = env::current_dir() {
         Ok(format!("{}/falkordb.so", path.display()))

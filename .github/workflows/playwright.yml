@@ -1,10 +1,13 @@
+# NOTE: exercises ui/, FalkorDB's public benchmark-results site (legacy —
+# see ui/README.md). Not part of the ibexdb head-to-head harness; kept so the
+# legacy UI keeps building until it's rebranded or removed.
 name: Playwright Tests
 
 on:
   push:
-    branches: [ master, staging ]
+    branches: [ master ]
   pull_request:
-    branches: [ master, staging ]
+    branches: [ master ]
 
 jobs:
   test:

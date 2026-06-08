@@ -53,7 +53,7 @@ global:
 
 scrape_configs:
 
-  - job_name: 'falkor_benchmark'
+  - job_name: 'benchmark'
     static_configs:
       - targets: [ 'host.docker.internal:8080' ]
 
@@ -127,7 +127,7 @@ global:
 
 scrape_configs:
 
-  - job_name: 'falkor_benchmark'
+  - job_name: 'benchmark'
     static_configs:
       - targets: [ '${HOST_IP}:8080' ] # Use host IP for Linux
 

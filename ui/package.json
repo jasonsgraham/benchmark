@@ -1,5 +1,5 @@
 {
-  "name": "falkordb-benchmark-ui",
+  "name": "benchmark-ui-legacy",
   "version": "0.1.0",
   "private": true,
   "scripts": {

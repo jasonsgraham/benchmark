@@ -1,27 +1,26 @@
-[![Cargo Build & Test](https://github.com/FalkorDB/benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/FalkorDB/benchmark/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/falkordb/benchmark.svg)](https://github.com/falkordb/benchmark/blob/main/LICENSE)
-[![Discord](https://img.shields.io/discord/1146782921294884966.svg?style=social&logo=discord)](https://discord.com/invite/99y2Ubh6tg)
-[![Twitter](https://img.shields.io/twitter/follow/falkordb?style=social)](https://twitter.com/falkordb)
+[![Cargo Build & Test](https://github.com/jasonsgraham/benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/jasonsgraham/benchmark/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/jasonsgraham/benchmark.svg)](https://github.com/jasonsgraham/benchmark/blob/master/LICENSE)
 
-## See the benchmarks ([Click here](https://benchmark.falkordb.com/))
-# Key Benchmark Takeaways
+# ibexdb head-to-head benchmark harness
 
-Get mission-critical performance even under extreme workloads, with response times staying under 140ms at p99, while
-competitors struggle with multi-second latencies. Reduce infrastructure costs and improve user experience with
-FalkorDB's superior performance profile, requiring fewer resources to handle peak workloads.
+This is a fork of [FalkorDB/benchmark](https://github.com/FalkorDB/benchmark) (MIT licensed),
+repurposed as a head-to-head load/latency harness comparing **ibexdb**, **FalkorDB**, and
+**Neo4j** on the same Cypher workloads, dataset, and hardware. It drives each vendor through
+a uniform process + client driver (`src/ibex/`, `src/falkor/`, `src/neo4j*.rs`), runs prepared
+query sets at a configurable rate, and exports latency/resource metrics via Prometheus +
+Grafana for side-by-side comparison.
 
-| Percentile       | FalkorDB (ms) | Neo4j (ms) | Performance Difference |
-|------------------|---------------|------------|------------------------|
-| **p50 (median)** | 55.0          | 577.5      | 10.5x faster           |
-| **p90**          | 108.0         | 4784.1     | 44.3x faster           |
-| **p99**          | 136.2         | 46923.8    | 344.5x faster          |
+The original FalkorDB-vs-Neo4j results and public results site are preserved for reference
+(see `## About the benchmarks` below and [`ui/`](ui/README.md), now marked legacy) — the goal
+going forward is to extend these comparisons with ibexdb.
 
-## About the benchmarks
+## About the original FalkorDB vs. Neo4j benchmarks
 
 This benchmark provides comprehensive performance comparisons between FalkorDB and Neo4j graph databases. This benchmark
-specifically focuses on aggregate expansion operations, a common workload in graph database applications. The results
-indicate FalkorDB's particular strength in maintaining consistent performance under varying workload conditions,
-especially crucial for production environments where predictable response times are essential.
+specifically focuses on aggregate expansion operations, a common workload in graph database applications. The original
+results (FalkorDB p50/p90/p99 of 55.0/108.0/136.2 ms vs. Neo4j's 577.5/4784.1/46923.8 ms) are published at
+[benchmark.falkordb.com](https://benchmark.falkordb.com/) and indicate FalkorDB's particular strength in maintaining
+consistent performance under varying workload conditions.
 
 ## System Requirements
 
@@ -118,6 +117,7 @@ Options:
 
 - `cargo run --release --bin benchmark -- load --vendor falkor -s small`
 - `cargo run --release --bin benchmark -- load --vendor neo4j -s small`
+- `cargo run --release --bin benchmark -- load --vendor ibex -s small` (planned — see `Vendor::Ibex`/`src/ibex/`)
 
 ##### create a set of queries to be used with the run command
 
@@ -129,6 +129,7 @@ Options:
 
 - `cargo run --release --bin benchmark run --vendor falkor --name small-readonly -p40 --mps 4000`
 - `cargo run --release --bin benchmark run --vendor neo4j --name small-readonly -p40 --mps 4000`
+- `cargo run --release --bin benchmark run --vendor ibex --name small-readonly -p40 --mps 4000` (planned — see `Vendor::Ibex`/`src/ibex/`)
 
 ##### run simulation to see that the benchmark itself can sustain spesific mps given a fix latency on that hardware
 

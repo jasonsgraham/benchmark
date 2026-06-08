@@ -1,3 +1,10 @@
+> **Legacy / optional:** this is FalkorDB's public benchmark-results marketing
+> site (branding, HubSpot/GTM integration, `resultData.json`, etc. all assume
+> FalkorDB's hosting). It is **not** part of the ibexdb head-to-head harness —
+> kept building (see `.github/workflows/playwright.yml`) for reference, but not
+> actively maintained here. Rebrand or remove it if/when a public results site
+> for this fork is needed.
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

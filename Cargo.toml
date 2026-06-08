@@ -1,16 +1,21 @@
+# Standalone workspace root: this is a nested git checkout (its own repo/remote)
+# inside ibexdb-rust, not a member of its workspace — the empty table stops
+# cargo's upward search from binding it to the parent workspace.
+[workspace]
+
 [package]
 name = "benchmark"
 version = "0.1.0"
 edition = "2021"
 
 
-description = "A FalkorDB Benchmark"
-homepage = "https://www.falkordb.com/"
+description = "Head-to-head graph database benchmark harness: ibexdb vs FalkorDB vs Neo4j"
+homepage = "https://github.com/jasonsgraham/benchmark"
 readme = "readme.md"
-repository = "https://github.com/FalkorDB/benchmark"
+repository = "https://github.com/jasonsgraham/benchmark"
 license = "MIT"
 categories = ["database"]
-keywords = ["database", "graph-database", "database-driver", "falkordb", "benchmark"]
+keywords = ["database", "graph-database", "database-driver", "ibexdb", "benchmark"]
 
 [lints.clippy]
 result_large_err = "allow"

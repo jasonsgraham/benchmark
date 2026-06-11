@@ -128,14 +128,21 @@ async fn run_neo4j(
     simulate: Option<usize>,
 ) -> BenchmarkResult<()> {
     let mut neo4j = benchmark::neo4j::Neo4j::default();
-    // stop neo4j if it is running
-    neo4j.stop(false).await?;
     let (queries_metadata, queries) = read_queries(file_name).await?;
     let number_of_queries = queries_metadata.size;
     let spec = Spec::new(Users, queries_metadata.dataset, Vendor::Neo4j);
-    neo4j.restore_db(spec).await?;
-    // start neo4j
-    neo4j.start().await?;
+
+    // NEO4J_EXTERNAL: connect to the Docker container (NEO4J_URI / NEO4J_PASSWORD)
+    // instead of managing a local neo4j process via local binaries.
+    let neo4j_external = std::env::var("NEO4J_EXTERNAL").is_ok();
+    if !neo4j_external {
+        // stop neo4j if it is running
+        neo4j.stop(false).await?;
+        neo4j.restore_db(spec).await?;
+        // start neo4j
+        neo4j.start().await?;
+    }
+
     let client = neo4j.client().await?;
     info!("client connected to neo4j");
     // get the graph size
@@ -175,8 +182,9 @@ async fn run_neo4j(
         format_number(number_of_queries as u64),
         elapsed
     );
-    neo4j.stop(true).await?;
-    // stop neo4j
+    if !neo4j_external {
+        neo4j.stop(true).await?;
+    }
     // write the report
     Ok(())
 }
@@ -632,6 +640,34 @@ async fn init_neo4j(
 ) -> BenchmarkResult<()> {
     let spec = Spec::new(benchmark::scenario::Name::Users, size, Vendor::Neo4j);
     let mut neo4j = benchmark::neo4j::Neo4j::default();
+
+    // NEO4J_EXTERNAL: load into the Docker container directly, skipping all local
+    // neo4j binary lifecycle (start/stop/dump/restore) which needs local binaries.
+    if std::env::var("NEO4J_EXTERNAL").is_ok() {
+        let client = neo4j.client().await?;
+        let mut histogram = Histogram::new(7, 64)?;
+        let mut index_stream = spec.init_index_iterator().await?;
+        info!("importing indexes");
+        client
+            .execute_query_stream(&mut index_stream, &mut histogram)
+            .await?;
+        let mut data_stream = spec.init_data_iterator().await?;
+        info!("importing data");
+        let start = Instant::now();
+        client
+            .execute_query_stream(&mut data_stream, &mut histogram)
+            .await?;
+        let (node_count, relation_count) = client.graph_size().await?;
+        info!(
+            "{} nodes and {} relations were imported at {:?}",
+            format_number(node_count),
+            format_number(relation_count),
+            start.elapsed()
+        );
+        show_historgam(histogram);
+        return Ok(());
+    }
+
     let _ = neo4j.stop(false).await?;
     let backup_path = format!("{}/neo4j.dump", spec.backup_path());
     if !force {

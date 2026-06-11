@@ -67,6 +67,10 @@ impl Falkor<Stopped> {
         &self,
         size: Size,
     ) -> BenchmarkResult<()> {
+        // In external mode the data lives in the Docker container volume — no local dump to copy.
+        if env::var("FALKOR_EXTERNAL").is_ok() {
+            return Ok(());
+        }
         if self.get_redis_pid().await.is_ok() {
             redis_shutdown().await?;
         }
@@ -149,6 +153,9 @@ impl<U> Falkor<U> {
         &self,
         size: Size,
     ) -> BenchmarkResult<()> {
+        if env::var("FALKOR_EXTERNAL").is_ok() {
+            return Ok(());
+        }
         let source = format!(
             "{}/{}_dump.rdb",
             REDIS_DATA_DIR,
@@ -168,6 +175,9 @@ impl<U> Falkor<U> {
         &self,
         size: Size,
     ) -> BenchmarkResult<()> {
+        if env::var("FALKOR_EXTERNAL").is_ok() {
+            return Ok(());
+        }
         let path = format!(
             "{}/{}_dump.rdb",
             REDIS_DATA_DIR,

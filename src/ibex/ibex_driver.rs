@@ -6,8 +6,8 @@ use crate::scenario::Size;
 use crate::scheduler::Msg;
 use crate::utils::{create_directory_if_not_exists, file_exists, spawn_command};
 use crate::{IBEX_MSG_DEADLINE_OFFSET_GAUGE, OPERATION_COUNTER, OPERATION_ERROR_COUNTER};
-use ibexdb_client::{ClientConfig, IbexClient};
-use ibexdb_types::{IbexResult, QueryResult};
+use ibexdb_types::QueryResult;
+use serde::{Deserialize, Serialize};
 use std::hint::black_box;
 use std::sync::Arc;
 use std::time::Duration;
@@ -91,12 +91,8 @@ impl Ibex<Started> {
 
 impl<U> Ibex<U> {
     pub async fn client(&self) -> BenchmarkResult<IbexBenchmarkClient> {
-        let config = ClientConfig {
-            endpoint: ibex_endpoint(),
-            ..Default::default()
-        };
         Ok(IbexBenchmarkClient {
-            client: Arc::new(IbexClient::new(config)),
+            client: IbexHttpClient::new(ibex_endpoint()),
         })
     }
 
@@ -158,11 +154,114 @@ mod tests {
         assert_eq!(saved_db_path(Size::Medium), "./ibex-data/medium_db");
         assert_eq!(saved_db_path(Size::Large), "./ibex-data/large_db");
     }
+
+    #[test]
+    fn query_response_maps_to_query_result() -> BenchmarkResult<()> {
+        let response = QueryResponse {
+            columns: vec!["name".to_string()],
+            rows: vec![vec![serde_json::json!("Alice")]],
+            execution_time_ms: 3,
+            row_count: 1,
+            error: None,
+        };
+
+        let result = response.into_query_result()?;
+
+        assert_eq!(result.columns, vec!["name"]);
+        assert_eq!(result.rows, vec![vec![serde_json::json!("Alice")]]);
+        assert_eq!(result.execution_time_ms, 3);
+        assert_eq!(result.row_count, 1);
+        assert_eq!(result.rows_examined, 1);
+        assert!(!result.cache_hit);
+        Ok(())
+    }
+
+    #[test]
+    fn query_response_error_becomes_benchmark_error() {
+        let response = QueryResponse {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            execution_time_ms: 0,
+            row_count: 0,
+            error: Some("syntax error".to_string()),
+        };
+
+        let result = response.into_query_result();
+
+        assert!(matches!(
+            result,
+            Err(OtherError(message)) if message.contains("syntax error")
+        ));
+    }
 }
 
 #[derive(Clone)]
 pub struct IbexBenchmarkClient {
-    client: Arc<IbexClient>,
+    client: IbexHttpClient,
+}
+
+#[derive(Clone)]
+struct IbexHttpClient {
+    client: reqwest::Client,
+    endpoint: String,
+}
+
+impl IbexHttpClient {
+    fn new(endpoint: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            endpoint,
+        }
+    }
+
+    async fn query_string(
+        &self,
+        query: &str,
+    ) -> BenchmarkResult<QueryResult> {
+        let url = format!("{}/api/query", self.endpoint);
+        let response: QueryResponse = self
+            .client
+            .post(url)
+            .json(&QueryRequest { query })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        response.into_query_result()
+    }
+}
+
+#[derive(Serialize)]
+struct QueryRequest<'a> {
+    query: &'a str,
+}
+
+#[derive(Deserialize)]
+struct QueryResponse {
+    columns: Vec<String>,
+    rows: Vec<Vec<serde_json::Value>>,
+    execution_time_ms: u64,
+    row_count: usize,
+    error: Option<String>,
+}
+
+impl QueryResponse {
+    fn into_query_result(self) -> BenchmarkResult<QueryResult> {
+        if let Some(error) = self.error {
+            return Err(OtherError(format!("IbexDB query error: {}", error)));
+        }
+
+        Ok(QueryResult {
+            execution_time_ms: self.execution_time_ms,
+            rows_examined: self.row_count as u64,
+            cache_hit: false,
+            row_count: self.row_count,
+            columns: self.columns,
+            rows: self.rows,
+        })
+    }
 }
 
 impl IbexBenchmarkClient {
@@ -247,7 +346,7 @@ impl IbexBenchmarkClient {
         spawn_id: &str,
         query_name: &str,
         query: &str,
-        reply: Result<IbexResult<QueryResult>, Elapsed>,
+        reply: Result<BenchmarkResult<QueryResult>, Elapsed>,
     ) -> BenchmarkResult<()> {
         match reply {
             Ok(ibex_result) => match ibex_result {

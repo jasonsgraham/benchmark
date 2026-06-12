@@ -27,3 +27,4 @@ grafana-datasources.yml
 prometheus.yml
 .DS_Store
 
+small-readonly

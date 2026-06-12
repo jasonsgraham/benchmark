@@ -21,8 +21,7 @@ const IBEX_PORT: u16 = 8088;
 pub(crate) const IBEX_DATA_DIR: &str = "./ibex-data";
 
 pub fn ibex_endpoint() -> String {
-    std::env::var("IBEX_ENDPOINT")
-        .unwrap_or_else(|_| format!("http://{}:{}", IBEX_HOST, IBEX_PORT))
+    std::env::var("IBEX_ENDPOINT").unwrap_or_else(|_| format!("http://{}:{}", IBEX_HOST, IBEX_PORT))
 }
 
 /// Mirror of `ibexdb_server::StatsResponse` — that struct is private to the
@@ -32,6 +31,20 @@ pub fn ibex_endpoint() -> String {
 struct StatsResponse {
     num_nodes: u64,
     num_edges: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stats_response_deserializes_node_and_edge_counts() -> Result<(), serde_json::Error> {
+        let stats: StatsResponse = serde_json::from_str(r#"{"num_nodes":7,"num_edges":11}"#)?;
+
+        assert_eq!(stats.num_nodes, 7);
+        assert_eq!(stats.num_edges, 11);
+        Ok(())
+    }
 }
 
 pub(crate) async fn fetch_stats() -> BenchmarkResult<(u64, u64)> {
@@ -153,7 +166,9 @@ async fn report_metrics(system: Arc<Mutex<System>>) -> BenchmarkResult<()> {
 }
 
 async fn fill_memory_and_cpu_metrics(sys: Arc<Mutex<System>>) -> BenchmarkResult<()> {
-    let mut system = sys.lock().map_err(|_| OtherError("system mutex poisoned".to_string()))?;
+    let mut system = sys
+        .lock()
+        .map_err(|_| OtherError("system mutex poisoned".to_string()))?;
     // Refresh CPU usage
     system.refresh_all();
     let logical_cpus = system.cpus().len();
